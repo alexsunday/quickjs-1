@@ -457,7 +457,32 @@ typedef JSModuleDef *(JSInitModuleFunc)(JSContext *ctx,
 static JSModuleDef *js_module_loader_so(JSContext *ctx,
                                         const char *module_name)
 {
-    JS_ThrowReferenceError(ctx, "shared library modules are not supported yet");
+    HINSTANCE hd;
+    JSModuleDef *m;
+    JSInitModuleFunc *init;
+
+    hd = LoadLibrary(module_name);
+    if(!hd) {
+        JS_ThrowReferenceError(ctx, "could not load module filename '%s' as shared library", module_name);
+        goto fail;
+    }
+    init = (JSInitModuleFunc *)GetProcAddress(hd, "js_init_module");
+    if(!init) {
+        JS_ThrowReferenceError(ctx, "could not load module filename '%s': js_init_module not found", module_name);
+        goto fail;
+    }
+
+    m = init(ctx, module_name);
+    if(!m) {
+        JS_ThrowReferenceError(ctx, "could not load module filename '%s': initialization error", module_name);
+        goto fail;
+    }
+
+    return m;
+fail:
+    if(hd) {
+        FreeLibrary(hd);
+    }
     return NULL;
 }
 #else
@@ -569,7 +594,7 @@ JSModuleDef *js_module_loader(JSContext *ctx,
 {
     JSModuleDef *m;
 
-    if (has_suffix(module_name, ".so")) {
+    if (has_suffix(module_name, ".so") || has_suffix(module_name, ".dll")) {
         m = js_module_loader_so(ctx, module_name);
     } else {
         size_t buf_len;
