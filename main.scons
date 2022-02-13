@@ -1,0 +1,107 @@
+#!/usr/bin/env python
+import os
+import sys
+
+# option
+AddOption(
+  '--vscode',
+  dest='vscode',
+  action='store_true',
+  metavar='EXPORT',
+  help='export vscode project settings',
+)
+
+def read_version():
+  # work in build
+  with open('../VERSION', 'rt') as f:
+    return f.read().strip()
+
+INCLUDES = []
+DEFINES = ['_GNU_SOURCE', 'CONFIG_VERSION=\\"{}\\"'.format(read_version()), 'CONFIG_BIGNUM']
+
+env = Environment(
+  CC='gcc',
+  CFLAGS='-g -Wall -Wno-array-bounds -Wno-format-truncation -O2 -flto',
+  LINKFLAGS='-g -flto -lm -lpthread',
+  CPPPATH = INCLUDES,
+  CPPDEFINES = DEFINES,
+  AR='gcc-ar',
+  ARFLAGS='rcs',
+  TOOLS=["mingw"],
+)
+
+import json
+import stat
+def check_vscode_dir(d):
+  try:
+    res = os.stat(d)
+    if not stat.S_ISDIR(res.st_mode):
+      msg = '%s is not a dir, please remove it first.' % d
+      print(msg)
+      raise Exception(d)
+  except Exception as e:
+    os.mkdir(d)
+
+def vscode_project_action(source, target, env):
+  args = {
+    'name': 'quickjs',
+    'intelliSenseMode': 'gcc-x64',
+    'includePath': INCLUDES,
+    'defines': DEFINES,
+    'forcedInclude': [],
+    'cStandard': 'c99',
+    'cppStandard': 'c++11',
+    # 'compileCommands': 'scons',
+    'browse': {
+      'path': [],
+      'limitSymbolsToIncludedHeaders': True,
+      'databaseFilename': '',
+    }
+  }
+  out = {
+    'env': {},
+    'configurations': [args],
+    'version': 4,
+  }
+  check_vscode_dir('.vscode')
+  with open('.vscode/c_cpp_properties.json', 'wt') as fout:
+    fout.write(json.dumps(out, indent=4))
+  print('vscode project generate completed.')
+env['BUILDERS']['Vscode'] = Builder(action=vscode_project_action)
+
+if GetOption('vscode') == True: 
+  env.Vscode(source=[], target='.vscode')
+  sys.exit(0)
+
+qjsc_sources = ['qjsc.c', 'quickjs.c', 'libregexp.c', 'libunicode.c', 'cutils.c', 'quickjs-libc.c', 'libbf.c']
+qjsc_app = env.Program(source=qjsc_sources, target='qjsc')
+
+env['BUILDERS']['GenerateRepl'] = Builder(action='build\qjsc -c -o $TARGET -m $SOURCE', suffix='.c', src_suffix='.js')
+repl_c = env.GenerateRepl(target='repl.c', source='repl.js')
+# repl_c 依赖 qjsc_exe
+env.Depends(repl_c, qjsc_app)
+
+env['BUILDERS']['GenerateCalc'] = Builder(action='build\qjsc -fbignum -c -o $TARGET -m $SOURCE', suffix='.c', src_suffix='.js')
+qjscalc_c = env.GenerateCalc(target='qjscalc.c', source='qjscalc.js')
+# qjscalc_c 依赖 qjsc_exe
+env.Depends(qjscalc_c, qjsc_app)
+
+qjs_sources = ['qjscalc.c', 'repl.c', 'qjs.c', 'quickjs.c', 'libregexp.c', 'libunicode.c', 'cutils.c', 'quickjs-libc.c', 'libbf.c']
+env.Program(source=qjs_sources, target='qjs')
+
+lib_sources = ['quickjs.c', 'libregexp.c', 'libunicode.c', 'cutils.c', 'quickjs-libc.c', 'libbf.c']
+lib_objs = [
+  env.Object(
+    target='lib-obj-{}.o'.format(f),
+    source=f,
+    CFLAGS='-g -Wall -Wno-array-bounds -Wno-format-truncation -O2'
+  )
+  for f in lib_sources
+]
+qjs_lib = env.Library(source=lib_objs, target='libquickjs.a')
+qjs_lib_fto = env.Library(source=lib_sources, target='libquickjs.lto.a')
+
+# gcc -g -Wall -MMD -MF .obj/run-test262.o.d -Wno-array-bounds -Wno-format-truncation -D_GNU_SOURCE -DCONFIG_VERSION=\"\" -DCONFIG_BIGNUM -O2 -flto -c -o .obj/run-test262.o run-test262.c
+# .obj/run-test262.o .obj/quickjs.o .obj/libregexp.o .obj/libunicode.o .obj/cutils.o .obj/quickjs-libc.o .obj/libbf.o -lm -lpthread 
+# ln -sf qjs qjscalc
+env.Program(source=['run-test262.c'], LIBS=[qjs_lib], target='test-262')

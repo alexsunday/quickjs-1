@@ -1,0 +1,4 @@
+build
+.obj
+.sconsign.dblite
+.vscode
