@@ -13,14 +13,16 @@ AddOption(
 
 def read_version():
   # work in build
+  print('cwd: {}'.format(os.getcwd()))
   with open('../VERSION', 'rt') as f:
     return f.read().strip()
 
 INCLUDES = []
-DEFINES = ['_GNU_SOURCE', 'CONFIG_VERSION=\\"{}\\"'.format(read_version()), 'CONFIG_BIGNUM']
+DEFINES = ['_GNU_SOURCE', r'CONFIG_VERSION=\"{}\"'.format(read_version()), 'CONFIG_BIGNUM']
+CC = 'gcc.exe'
 
 env = Environment(
-  CC='gcc',
+  CC=CC,
   CFLAGS='-g -Wall -Wno-array-bounds -Wno-format-truncation -O2 -flto',
   LINKFLAGS='-g -flto -lm -lpthread',
   CPPPATH = INCLUDES,
@@ -52,6 +54,7 @@ def vscode_project_action(source, target, env):
     'cStandard': 'c99',
     'cppStandard': 'c++11',
     # 'compileCommands': 'scons',
+    "compilerPath": CC,
     'browse': {
       'path': [],
       'limitSymbolsToIncludedHeaders': True,
@@ -69,9 +72,10 @@ def vscode_project_action(source, target, env):
   print('vscode project generate completed.')
 env['BUILDERS']['Vscode'] = Builder(action=vscode_project_action)
 
-if GetOption('vscode') == True: 
+if GetOption('vscode') == True:
+  print('execute vscode task.')
   env.Vscode(source=[], target='.vscode')
-  sys.exit(0)
+  # sys.exit(0)
 
 qjsc_sources = ['qjsc.c', 'quickjs.c', 'libregexp.c', 'libunicode.c', 'cutils.c', 'quickjs-libc.c', 'libbf.c']
 qjsc_app = env.Program(source=qjsc_sources, target='qjsc')
